@@ -1,0 +1,108 @@
+{
+  "meta": {
+    "version": 1,
+    "game": "EA SPORTS FC 27",
+    "updatedAt": "2026-10-06T16:30:00Z",
+    "source": "FC Trader Assistant cloud feed"
+  },
+  "cards": [
+    {
+      "id": "donnarumma-base-89",
+      "name": "Gianluigi Donnarumma",
+      "version": "Base",
+      "rating": 89,
+      "position": "GK",
+      "club": "Manchester City",
+      "league": "Premier League",
+      "nation": "Italy",
+      "pricePc": 19500,
+      "priceConsole": 0,
+      "trendPc": 3.4,
+      "trendConsole": 0.0
+    },
+    {
+      "id": "ekitike-base-83",
+      "name": "Hugo Ekitiké",
+      "version": "Base",
+      "rating": 83,
+      "position": "ST",
+      "club": "Liverpool",
+      "league": "Premier League",
+      "nation": "France",
+      "pricePc": 9800,
+      "priceConsole": 0,
+      "trendPc": 5.8,
+      "trendConsole": 0.0
+    },
+    {
+      "id": "mbappe-base-91",
+      "name": "Kylian Mbappé",
+      "version": "Base",
+      "rating": 91,
+      "position": "ST",
+      "club": "Real Madrid",
+      "league": "LALIGA EA SPORTS",
+      "nation": "France",
+      "pricePc": 0,
+      "priceConsole": 0,
+      "trendPc": 0.0,
+      "trendConsole": 0.0
+    },
+    {
+      "id": "haaland-base-91",
+      "name": "Erling Haaland",
+      "version": "Base",
+      "rating": 91,
+      "position": "ST",
+      "club": "Manchester City",
+      "league": "Premier League",
+      "nation": "Norway",
+      "pricePc": 0,
+      "priceConsole": 0,
+      "trendPc": 0.0,
+      "trendConsole": 0.0
+    },
+    {
+      "id": "putellas-base-91",
+      "name": "Alexia Putellas",
+      "version": "Base",
+      "rating": 91,
+      "position": "CM",
+      "club": "FC Barcelona",
+      "league": "Liga F",
+      "nation": "Spain",
+      "pricePc": 0,
+      "priceConsole": 0,
+      "trendPc": 0.0,
+      "trendConsole": 0.0
+    },
+    {
+      "id": "bellingham-base-90",
+      "name": "Jude Bellingham",
+      "version": "Base",
+      "rating": 90,
+      "position": "CAM",
+      "club": "Real Madrid",
+      "league": "LALIGA EA SPORTS",
+      "nation": "England",
+      "pricePc": 0,
+      "priceConsole": 0,
+      "trendPc": 0.0,
+      "trendConsole": 0.0
+    },
+    {
+      "id": "olise-base-90",
+      "name": "Michael Olise",
+      "version": "Base",
+      "rating": 90,
+      "position": "RM",
+      "club": "FC Bayern München",
+      "league": "Bundesliga",
+      "nation": "France",
+      "pricePc": 0,
+      "priceConsole": 0,
+      "trendPc": 0.0,
+      "trendConsole": 0.0
+    }
+  ]
+}
