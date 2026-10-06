@@ -200,7 +200,7 @@ fun V23HomeScreen(
             }
         }
         if (ideas.isEmpty()) {
-            item { Text("Sync priced market data to unlock personalised trade ideas.", Modifier.padding(horizontal = 20.dp), color = V23Muted) }
+            item { Text("No usable ${platform.label} prices yet. The player database can still be searched; refresh the market feed for trade ideas.", Modifier.padding(horizontal = 20.dp), color = V23Muted) }
         } else {
             items(ideas, key = { "home-ai-${it.card.id}" }) { idea ->
                 Card(onClick = { onOpenCard(idea.card) }, modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp).fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = V23Panel)) {
@@ -253,6 +253,22 @@ fun V23MarketScreen(
     var maxPriceText by remember { mutableStateOf("") }
     var bucket by remember { mutableStateOf(V23MarketBucket.RISERS) }
 
+    val categoryMatches = remember(cards, query) {
+        val q = query.trim()
+        if (q.length < 2) emptyList() else buildList {
+            cards.asSequence().map { it.club }.filter { it.isNotBlank() && it.contains(q, true) }.distinct().take(3)
+                .forEach { add("Team" to it) }
+            cards.asSequence().map { it.league }.filter { it.isNotBlank() && it.contains(q, true) }.distinct().take(3)
+                .forEach { add("League" to it) }
+            cards.asSequence().map { it.nation }.filter { it.isNotBlank() && it.contains(q, true) }.distinct().take(2)
+                .forEach { add("Nation" to it) }
+            cards.asSequence().map { it.position }.filter { it.isNotBlank() && it.contains(q, true) }.distinct().take(2)
+                .forEach { add("Position" to it) }
+            cards.asSequence().map { it.version }.filter { it.isNotBlank() && it.contains(q, true) }.distinct().take(3)
+                .forEach { add("Card" to it) }
+        }.distinct().take(8)
+    }
+
     val filtered = remember(cards, query, club, league, nation, position, version, minRatingText, maxPriceText) {
         v23FilterCards(cards, query, club, league, nation, position, version, minRatingText.toIntOrNull(), maxPriceText.toIntOrNull(), currentPrice)
     }
@@ -287,9 +303,32 @@ fun V23MarketScreen(
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear") } },
-                    placeholder = { Text("Search player, club, league, nation, position…") },
+                    placeholder = { Text("Search player, team, league, nation, position…") },
                     shape = RoundedCornerShape(18.dp)
                 )
+                if (categoryMatches.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Quick matches", color = V23Muted, fontSize = 11.sp)
+                        categoryMatches.forEach { (kind, value) ->
+                            TextButton(
+                                onClick = {
+                                    when (kind) {
+                                        "Team" -> club = value
+                                        "League" -> league = value
+                                        "Nation" -> nation = value
+                                        "Position" -> position = value
+                                        "Card" -> version = value
+                                    }
+                                    query = ""
+                                    filtersOpen = true
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) {
+                                Text("$kind · $value", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
                 TextButton(onClick = { filtersOpen = !filtersOpen }) {
                     Icon(if (filtersOpen) Icons.Default.ExpandLess else Icons.Default.Tune, null)
                     Spacer(Modifier.width(6.dp))
@@ -310,7 +349,7 @@ fun V23MarketScreen(
                                 OutlinedTextField(version, { version = it }, label = { Text("Card / promo") }, singleLine = true, modifier = Modifier.weight(1f))
                                 OutlinedTextField(minRatingText, { minRatingText = it.filter(Char::isDigit).take(2) }, label = { Text("Min rating") }, singleLine = true, modifier = Modifier.weight(1f))
                             }
-                            OutlinedTextField(maxPriceText, { maxPriceText = it.filter(Char::isDigit).take(9) }, label = { Text("Max price") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(maxPriceText, { maxPriceText = it.filter(Char::isDigit).take(9) }, label = { Text("Max price (optional)") }, supportingText = { Text("Leave blank for no price limit") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             TextButton(onClick = { club = ""; league = ""; nation = ""; position = ""; version = ""; minRatingText = ""; maxPriceText = "" }) { Text("Clear filters") }
                         }
                     }
@@ -488,7 +527,7 @@ fun TraderAiScreen(
 
     fun answerPrompt(text: String): String {
         val q = text.lowercase()
-        if (cards.none { currentPrice(it) > 0 }) return "I need synced market prices before I can give a grounded answer. Refresh the market feed first."
+        if (cards.none { currentPrice(it) > 0 }) return "The player database is synced, but I do not have usable ${platform.label} prices yet. Refresh the market feed or switch market platform."
         if ("sell" in q || "portfolio" in q) {
             val byId = cards.associateBy { it.id }
             val best = openTrades.mapNotNull { t ->
