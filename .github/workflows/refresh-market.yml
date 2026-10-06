@@ -2,6 +2,10 @@ name: Refresh FC27 market feed
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'tools/sync_futgg.py'
+      - '.github/workflows/refresh-market.yml'
   schedule:
     - cron: '23 */6 * * *'
 
