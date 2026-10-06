@@ -12,26 +12,25 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "cards.json"
 
 META_URL = "https://www.fut.gg/api/fut/players/v2/27/"
-PS5_PRICE_URL = "https://s3.eu-west-2.amazonaws.com/game-assets.fut.gg/27/cdn-data/player-prices-ps5.json"
-PC_PRICE_CANDIDATES = [
-    "https://s3.eu-west-2.amazonaws.com/game-assets.fut.gg/27/cdn-data/player-prices-pc.json",
-    "https://s3.eu-west-2.amazonaws.com/game-assets.fut.gg/27/cdn-data/player-prices-pc5.json",
-]
+PC_PRICE_URL = "https://www.fut.gg/api/fut/player-prices/27/"
+PS5_ID_FEED = "https://s3.eu-west-2.amazonaws.com/game-assets.fut.gg/27/cdn-data/player-prices-ps5.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
     "Accept": "application/json,text/plain,*/*",
     "Referer": "https://www.fut.gg/",
+    "X-Requested-With": "XMLHttpRequest",
 }
-TIMEOUT = 30
+TIMEOUT = 35
 BATCH_SIZE = 30
+MIN_PC_PRICES = 1000
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def load_previous():
+def load_previous() -> dict[str, dict]:
     if not OUT.exists():
         return {}
     try:
@@ -41,7 +40,7 @@ def load_previous():
         return {}
 
 
-def text(obj, *keys, default=""):
+def text(obj: dict, *keys: str, default: str = "") -> str:
     for key in keys:
         v = obj.get(key)
         if isinstance(v, str) and v.strip():
@@ -54,7 +53,7 @@ def text(obj, *keys, default=""):
     return default
 
 
-def number(obj, *keys, default=0):
+def number(obj: dict, *keys: str, default: int = 0) -> int:
     for key in keys:
         v = obj.get(key)
         if isinstance(v, (int, float)):
@@ -73,35 +72,59 @@ def pct(old: int, new: int) -> float:
     return round((new - old) * 100.0 / old, 2)
 
 
-def fetch_json(url, params=None):
-    r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
-    r.raise_for_status()
-    return r.json()
+def fetch_json(url: str, params=None):
+    last = None
+    for attempt in range(1, 4):
+        try:
+            r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            last = exc
+            if attempt < 3:
+                time.sleep(attempt * 1.5)
+    raise RuntimeError(f"Request failed for {url}: {last}")
 
 
-def decode_compact_prices(url: str) -> dict[str, int]:
-    payload = fetch_json(url)
+def decode_compact_ids() -> list[str]:
+    payload = fetch_json(PS5_ID_FEED)
     id0 = int(payload["id0"])
     gaps = payload.get("d") or []
-    prices = payload.get("p") or []
     ids = [id0]
     for gap in gaps:
         ids.append(ids[-1] + int(gap))
-    if len(ids) != len(prices):
-        raise RuntimeError(f"Compact price feed mismatch: {len(ids)} ids vs {len(prices)} prices")
-    return {str(pid): int(price or 0) for pid, price in zip(ids, prices)}
+    return [str(x) for x in ids]
 
 
-def load_pc_prices() -> tuple[dict[str, int], str]:
-    for url in PC_PRICE_CANDIDATES:
-        try:
-            prices = decode_compact_prices(url)
-            if len(prices) > 1000:
-                print(f"PC price feed found: {url} ({len(prices)} cards)")
-                return prices, url
-        except Exception as exc:
-            print(f"PC price candidate unavailable: {url} -> {exc}")
-    return {}, ""
+def fetch_pc_prices(ids: list[str]) -> dict[str, int]:
+    prices: dict[str, int] = {}
+    total_batches = (len(ids) + BATCH_SIZE - 1) // BATCH_SIZE
+
+    for start in range(0, len(ids), BATCH_SIZE):
+        batch = ids[start:start + BATCH_SIZE]
+        payload = fetch_json(
+            PC_PRICE_URL,
+            {"ids": ",".join(batch), "platform": "pc"},
+        )
+        data = payload.get("data") or []
+        rows = data.values() if isinstance(data, dict) else data
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            ea_id = number(row, "eaId", "id")
+            if not ea_id:
+                continue
+            price = number(row, "price", "currentPrice", "lowestPrice")
+            if price > 0:
+                prices[str(ea_id)] = price
+
+        batch_no = start // BATCH_SIZE + 1
+        if batch_no == 1 or batch_no % 25 == 0 or batch_no == total_batches:
+            print(f"PC price batches {batch_no}/{total_batches}: {len(prices)} live prices")
+        time.sleep(0.05)
+
+    return prices
 
 
 def position_text(row: dict) -> str:
@@ -115,6 +138,7 @@ def position_text(row: dict) -> str:
     )
     if value:
         return value.upper()
+
     for key in ("positions", "positionNames", "alternatePositions"):
         vals = row.get(key)
         if isinstance(vals, list) and vals:
@@ -132,10 +156,19 @@ def card_from_row(row: dict, previous: dict[str, dict]):
     ea_id = number(row, "eaId", "id")
     if not ea_id:
         return None
+
     cid = str(ea_id)
     old = previous.get(cid, {})
 
-    name = text(row, "commonName", "cardName", "name", "nickname", "firstName", default=f"Player {cid}")
+    name = text(
+        row,
+        "commonName",
+        "cardName",
+        "name",
+        "nickname",
+        "firstName",
+        default=f"Player {cid}",
+    )
     if name == text(row, "firstName") and text(row, "lastName"):
         name = (name + " " + text(row, "lastName")).strip()
 
@@ -159,26 +192,30 @@ def card_from_row(row: dict, previous: dict[str, dict]):
 def fetch_metadata_for_ids(ids: list[str], previous: dict[str, dict]) -> dict[str, dict]:
     cards: dict[str, dict] = {}
     total_batches = (len(ids) + BATCH_SIZE - 1) // BATCH_SIZE
-    for n in range(0, len(ids), BATCH_SIZE):
-        batch = ids[n:n + BATCH_SIZE]
+
+    for start in range(0, len(ids), BATCH_SIZE):
+        batch = ids[start:start + BATCH_SIZE]
         try:
             payload = fetch_json(META_URL, {"ids": ",".join(batch)})
         except Exception as exc:
-            print(f"metadata batch {n // BATCH_SIZE + 1}/{total_batches} failed: {exc}")
+            print(f"metadata batch {start // BATCH_SIZE + 1}/{total_batches} failed: {exc}")
             continue
+
         for row in payload.get("data") or []:
             card = card_from_row(row, previous)
             if card:
                 cards[card["id"]] = card
-        if (n // BATCH_SIZE + 1) % 25 == 0:
-            print(f"metadata batches {n // BATCH_SIZE + 1}/{total_batches}: {len(cards)} cards")
-        time.sleep(0.03)
+
+        batch_no = start // BATCH_SIZE + 1
+        if batch_no == 1 or batch_no % 25 == 0 or batch_no == total_batches:
+            print(f"metadata batches {batch_no}/{total_batches}: {len(cards)} cards")
+        time.sleep(0.04)
+
     return cards
 
 
 def crawl_public_catalogue(cards: dict[str, dict], previous: dict[str, dict]):
-    # Also crawl the normal catalogue so newly released/unpriced promo items can
-    # appear before they reach either compact price file.
+    # Adds newly released/unpriced items that may not yet exist in the market id feed.
     page = 1
     while page <= 400:
         try:
@@ -187,23 +224,32 @@ def crawl_public_catalogue(cards: dict[str, dict], previous: dict[str, dict]):
             if exc.response is not None and exc.response.status_code in (400, 404):
                 break
             raise
+        except Exception as exc:
+            print(f"catalogue crawl stopped at page {page}: {exc}")
+            break
+
         rows = payload.get("data") or []
         if not rows:
             break
+
         for row in rows:
             card = card_from_row(row, previous)
             if card:
                 cards[card["id"]] = card
+
         if page % 25 == 0:
             print(f"catalogue page {page}: total metadata {len(cards)}")
+
         if not payload.get("next"):
             break
+
         page += 1
-        time.sleep(0.03)
+        time.sleep(0.04)
 
 
-def apply_prices(cards: dict[str, dict], previous: dict[str, dict], field: str, trend_field: str, prices: dict[str, int]):
+def apply_pc_prices(cards: dict[str, dict], previous: dict[str, dict], prices: dict[str, int]) -> int:
     applied = 0
+
     for cid, price in prices.items():
         if cid not in cards:
             old = previous.get(cid, {})
@@ -217,46 +263,40 @@ def apply_prices(cards: dict[str, dict], previous: dict[str, dict], field: str, 
                 "league": old.get("league") or "",
                 "nation": old.get("nation") or "",
                 "imageUrl": old.get("imageUrl") or "",
-                "pricePc": int(old.get("pricePc") or 0),
+                "pricePc": 0,
                 "priceConsole": int(old.get("priceConsole") or 0),
-                "trendPc": float(old.get("trendPc") or 0.0),
+                "trendPc": 0.0,
                 "trendConsole": float(old.get("trendConsole") or 0.0),
             }
-        old_price = int(previous.get(cid, {}).get(field) or 0)
-        cards[cid][field] = int(price or 0)
-        cards[cid][trend_field] = pct(old_price, int(price or 0))
-        if price:
-            applied += 1
+
+        old_price = int(previous.get(cid, {}).get("pricePc") or 0)
+        cards[cid]["pricePc"] = int(price)
+        cards[cid]["trendPc"] = pct(old_price, int(price))
+        applied += 1
+
     return applied
 
 
 def main():
     previous = load_previous()
 
-    console_prices = decode_compact_prices(PS5_PRICE_URL)
-    print(f"Console compact price feed: {len(console_prices)} cards")
+    master_ids = decode_compact_ids()
+    print(f"Master FC27 market id set: {len(master_ids)} cards")
 
-    pc_prices, pc_source = load_pc_prices()
-    if pc_prices:
-        print(f"PC compact price feed: {len(pc_prices)} cards")
-    else:
-        print("No verified public PC compact price file was found; previous PC values will be preserved.")
+    pc_prices = fetch_pc_prices(master_ids)
+    print(f"Live PC prices received: {len(pc_prices)}")
 
-    master_ids = sorted(set(console_prices) | set(pc_prices), key=lambda x: int(x))
-    print(f"Master priced-card id set: {len(master_ids)}")
+    # Never replace a good feed with an empty/blocked PC response.
+    if len(pc_prices) < MIN_PC_PRICES:
+        raise SystemExit(
+            f"Only {len(pc_prices)} live PC prices were returned; "
+            "refusing to overwrite the existing feed."
+        )
 
     cards = fetch_metadata_for_ids(master_ids, previous)
     crawl_public_catalogue(cards, previous)
 
-    console_applied = apply_prices(cards, previous, "priceConsole", "trendConsole", console_prices)
-    pc_applied = apply_prices(cards, previous, "pricePc", "trendPc", pc_prices) if pc_prices else 0
-
-    # Preserve any previous PC prices when a live PC source is unavailable.
-    if not pc_prices:
-        for cid, card in cards.items():
-            old = previous.get(cid, {})
-            card["pricePc"] = int(old.get("pricePc") or card.get("pricePc") or 0)
-            card["trendPc"] = float(old.get("trendPc") or card.get("trendPc") or 0.0)
+    pc_applied = apply_pc_prices(cards, previous, pc_prices)
 
     if len(cards) < 1000:
         raise SystemExit(f"Refusing to overwrite feed with only {len(cards)} cards")
@@ -266,20 +306,26 @@ def main():
             "version": 3,
             "game": "EA SPORTS FC 27",
             "updatedAt": now_iso(),
-            "source": "FUT.GG catalogue + FUT.GG compact market feeds",
-            "consolePricedCards": console_applied,
-            "pcPricedCards": pc_applied,
-            "pcPriceSource": pc_source,
+            "source": "FUT.GG FC27 catalogue + FUT.GG PC market prices",
+            "platform": "PC",
+            "livePriceCount": pc_applied,
         },
         "cards": sorted(
             cards.values(),
-            key=lambda c: (-int(c.get("rating") or 0), c.get("name") or "", c.get("version") or "")
+            key=lambda c: (
+                -int(c.get("rating") or 0),
+                c.get("name") or "",
+                c.get("version") or "",
+            ),
         ),
     }
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"Wrote {len(result['cards'])} cards to {OUT}")
-    print(f"Priced cards: console={console_applied}, pc={pc_applied}")
+    OUT.write_text(
+        json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    print(f"Wrote {len(result['cards'])} cards with {pc_applied} live PC prices to {OUT}")
 
 
 if __name__ == "__main__":
