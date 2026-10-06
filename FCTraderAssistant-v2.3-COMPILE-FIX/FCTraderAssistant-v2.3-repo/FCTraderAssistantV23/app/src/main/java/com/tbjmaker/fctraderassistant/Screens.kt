@@ -968,11 +968,12 @@ fun BalanceDialog(currentBalance: Int?, canCancel: Boolean, onDismiss: () -> Uni
         title = { Text(if (currentBalance == null) "Set your coin balance" else "Change coin balance") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (currentBalance == null) "Enter the coins currently shown in FC. This is not a fixed budget—you can change it whenever you need." else "Set this to the balance currently shown in FC. Logged buys and sales will update it automatically afterwards.")
+                Text(if (currentBalance == null) "Enter the coins currently shown in FC. There is no artificial trading budget cap in the app—you can enter balances and card prices into the millions." else "Set this to the balance currently shown in FC. Logged buys and sales will update it automatically afterwards.")
                 OutlinedTextField(
                     value = value,
                     onValueChange = { value = it.filter(Char::isDigit).take(9) },
                     label = { Text("Current coins") },
+                    supportingText = { Text("Supports values into the hundreds of millions") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
