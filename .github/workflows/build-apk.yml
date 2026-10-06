@@ -1,13 +1,10 @@
-name: Build FC Trader Assistant v2.3 APK
+name: Build FC Trader Assistant v2.3
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-    paths:
-      - 'FCTraderAssistantV23/**'
-      - '.github/workflows/build-apk.yml'
 
 jobs:
   build:
@@ -34,11 +31,27 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build v2.3 APK
-        run: gradle -p FCTraderAssistantV23 :app:assembleDebug
+      - name: Find v2.3 Android project
+        run: |
+          SETTINGS_FILE="$(find . -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit)"
 
-      - name: Upload APK
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "Could not find Android Gradle project"
+            find . -maxdepth 6 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          echo "Android project found at: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Build v2.3 APK
+        run: gradle -p "$PROJECT_DIR" :app:assembleDebug
+
+      - name: Upload v2.3 APK
         uses: actions/upload-artifact@v4
         with:
           name: FC-Trader-Assistant-v2.3-APK
-          path: FCTraderAssistantV23/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            **/app/build/outputs/apk/debug/app-debug.apk
