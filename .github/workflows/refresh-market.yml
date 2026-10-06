@@ -1,0 +1,45 @@
+name: Refresh FC27 market feed
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install community market adapter
+        run: pip install 'git+https://github.com/WilgotM/quick-fut-price.git'
+
+      - name: Refresh card catalogue and prices
+        id: refresh
+        continue-on-error: true
+        run: python tools/sync_futbin.py
+
+      - name: Validate feed
+        if: steps.refresh.outcome == 'success'
+        run: python -m json.tool data/cards.json > /dev/null
+
+      - name: Commit fresh feed
+        if: steps.refresh.outcome == 'success'
+        run: |
+          if git diff --quiet -- data/cards.json; then
+            echo 'No feed changes.'
+            exit 0
+          fi
+          git config user.name 'FC Trader Market Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add data/cards.json
+          git commit -m 'Refresh FC27 market feed'
+          git push
