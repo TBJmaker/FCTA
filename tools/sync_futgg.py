@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "cards.json"
 
 META_URL = "https://www.fut.gg/api/fut/players/v2/27/"
-PC_PRICE_URL = "https://www.fut.gg/api/fut/player-prices/27/"
+PC_PRICE_URL = "https://enhancer-api.futnext.com/players/prices"
 PS5_ID_FEED = "https://s3.eu-west-2.amazonaws.com/game-assets.fut.gg/27/cdn-data/player-prices-ps5.json"
 
 HEADERS = {
@@ -98,34 +98,47 @@ def decode_compact_ids() -> list[str]:
 
 def fetch_pc_prices(ids: list[str]) -> dict[str, int]:
     prices: dict[str, int] = {}
-    total_batches = (len(ids) + BATCH_SIZE - 1) // BATCH_SIZE
+    price_times: list[int] = []
+    batch_size = 50
+    total_batches = (len(ids) + batch_size - 1) // batch_size
 
-    for start in range(0, len(ids), BATCH_SIZE):
-        batch = ids[start:start + BATCH_SIZE]
+    for start in range(0, len(ids), batch_size):
+        batch = ids[start:start + batch_size]
         payload = fetch_json(
             PC_PRICE_URL,
-            {"ids": ",".join(batch), "platform": "pc"},
+            {"ids": "_".join(batch), "platform": "pc"},
         )
-        data = payload.get("data") or []
-        rows = data.values() if isinstance(data, dict) else data
 
-        for row in rows:
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Unexpected PC price response type: {type(payload).__name__}")
+
+        for row in payload:
             if not isinstance(row, dict):
                 continue
-            ea_id = number(row, "eaId", "id")
-            if not ea_id:
-                continue
-            price = number(row, "price", "currentPrice", "lowestPrice")
-            if price > 0:
+            ea_id = number(row, "definitionId", "eaId", "id")
+            raw_prices = row.get("prices") or []
+            price = 0
+            if isinstance(raw_prices, list) and raw_prices:
+                try:
+                    price = int(raw_prices[0] or 0)
+                except Exception:
+                    price = 0
+            if ea_id and price > 0:
                 prices[str(ea_id)] = price
+                updated = row.get("updatedAt")
+                if isinstance(updated, (int, float)):
+                    price_times.append(int(updated))
 
-        batch_no = start // BATCH_SIZE + 1
+        batch_no = start // batch_size + 1
         if batch_no == 1 or batch_no % 25 == 0 or batch_no == total_batches:
             print(f"PC price batches {batch_no}/{total_batches}: {len(prices)} live prices")
         time.sleep(0.05)
 
-    return prices
+    if price_times:
+        newest = max(price_times)
+        print(f"Newest upstream PC price timestamp: {newest}")
 
+    return prices
 
 def position_text(row: dict) -> str:
     value = text(
@@ -306,7 +319,7 @@ def main():
             "version": 3,
             "game": "EA SPORTS FC 27",
             "updatedAt": now_iso(),
-            "source": "FUT.GG FC27 catalogue + FUT.GG PC market prices",
+            "source": "FUT.GG FC27 catalogue + FutNext PC market prices",
             "platform": "PC",
             "livePriceCount": pc_applied,
         },
