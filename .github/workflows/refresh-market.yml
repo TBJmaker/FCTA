@@ -27,10 +27,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install updater dependencies
-        run: pip install --disable-pip-version-check cloudscraper beautifulsoup4 lxml
+        run: pip install --disable-pip-version-check requests
 
       - name: Refresh FC27 card catalogue and prices
-        run: python tools/sync_futwiz.py
+        run: python tools/sync_futgg.py
 
       - name: Validate feed
         run: |
