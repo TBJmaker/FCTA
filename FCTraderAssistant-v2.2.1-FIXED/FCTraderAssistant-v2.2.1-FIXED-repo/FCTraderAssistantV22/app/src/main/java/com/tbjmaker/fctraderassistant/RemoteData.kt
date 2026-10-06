@@ -81,7 +81,7 @@ object RemoteData {
         }
 
         if (cards.isEmpty()) error("The feed contained no player cards")
-        RemoteFeed(meta = meta, cards = cards.distinctBy { it.id })
+        return RemoteFeed(meta = meta, cards = cards.distinctBy { it.id })
     }
 
     private fun slug(value: String): String = value
