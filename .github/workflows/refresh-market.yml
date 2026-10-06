@@ -8,31 +8,44 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: fc27-market-feed
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Get repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install community market adapter
-        run: pip install 'git+https://github.com/WilgotM/quick-fut-price.git'
+      - name: Install updater dependencies
+        run: pip install --disable-pip-version-check cloudscraper beautifulsoup4 lxml
 
-      - name: Refresh card catalogue and prices
-        id: refresh
-        continue-on-error: true
-        run: python tools/sync_futbin.py
+      - name: Refresh FC27 card catalogue and prices
+        run: python tools/sync_futwiz.py
 
       - name: Validate feed
-        if: steps.refresh.outcome == 'success'
-        run: python -m json.tool data/cards.json > /dev/null
+        run: |
+          python -m json.tool data/cards.json > /dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('data/cards.json').read_text(encoding='utf-8'))
+          cards = p.get('cards', [])
+          if len(cards) < 1000:
+              raise SystemExit(f'Refusing feed with only {len(cards)} cards')
+          print(f'Validated {len(cards)} cards')
+          PY
 
       - name: Commit fresh feed
-        if: steps.refresh.outcome == 'success'
         run: |
           if git diff --quiet -- data/cards.json; then
             echo 'No feed changes.'
