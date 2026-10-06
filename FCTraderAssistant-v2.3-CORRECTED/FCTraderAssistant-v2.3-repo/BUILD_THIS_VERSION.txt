@@ -1,0 +1,3 @@
+Build target: FCTraderAssistantV23
+App ID: com.tbjmaker.fctraderassistant.v23
+Display name: FC Trader Assistant v2.3
