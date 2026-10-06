@@ -31,19 +31,19 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Find v2.3 Android project
+      - name: Find ONLY v2.3 project
         run: |
-          SETTINGS_FILE="$(find . -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit)"
+          SETTINGS_FILE="$(find . -type f -path "*/FCTraderAssistantV23/settings.gradle.kts" -print -quit)"
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "Could not find Android Gradle project"
-            find . -maxdepth 6 -type f | sort
+            echo "FCTraderAssistantV23 was not found"
+            find . -maxdepth 8 -type f -name "settings.gradle.kts" -print
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
 
-          echo "Android project found at: $PROJECT_DIR"
+          echo "V2.3 project found at: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build v2.3 APK
@@ -52,6 +52,6 @@ jobs:
       - name: Upload v2.3 APK
         uses: actions/upload-artifact@v4
         with:
-          name: FC-Trader-Assistant-v2.3-APK
+          name: FC-Trader-Assistant-v2.3-CORRECT-APK
           path: |
-            **/app/build/outputs/apk/debug/app-debug.apk
+            **/FCTraderAssistantV23/app/build/outputs/apk/debug/app-debug.apk
