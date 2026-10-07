@@ -24,6 +24,7 @@ HEADERS = {
 TIMEOUT = 35
 BATCH_SIZE = 30
 MIN_PC_PRICES = 1000
+HISTORY_HOURS = 26
 
 
 def now_iso() -> str:
@@ -70,6 +71,44 @@ def pct(old: int, new: int) -> float:
     if old <= 0 or new <= 0:
         return 0.0
     return round((new - old) * 100.0 / old, 2)
+
+
+def history_with_sample(old: dict, price: int, sampled_at: str) -> list[dict]:
+    history = old.get("priceHistoryPc")
+    if not isinstance(history, list):
+        history = []
+    clean = []
+    for sample in history:
+        if not isinstance(sample, dict):
+            continue
+        ts = str(sample.get("at") or "")
+        try:
+            value = int(sample.get("price") or 0)
+        except Exception:
+            value = 0
+        if ts and value > 0:
+            clean.append({"at": ts, "price": value})
+    clean.append({"at": sampled_at, "price": int(price)})
+    return clean[-HISTORY_HOURS:]
+
+
+def trend_from_history(history: list[dict], current: int, hours: int) -> float:
+    if current <= 0 or not history:
+        return 0.0
+    target = datetime.now(timezone.utc).timestamp() - hours * 3600
+    best = None
+    best_distance = None
+    for sample in history[:-1]:
+        try:
+            ts = datetime.fromisoformat(str(sample["at"]).replace("Z", "+00:00")).timestamp()
+            price = int(sample["price"])
+        except Exception:
+            continue
+        distance = abs(ts - target)
+        if price > 0 and (best_distance is None or distance < best_distance):
+            best = price
+            best_distance = distance
+    return pct(int(best or 0), current)
 
 
 def fetch_json(url: str, params=None):
@@ -262,6 +301,7 @@ def crawl_public_catalogue(cards: dict[str, dict], previous: dict[str, dict]):
 
 def apply_pc_prices(cards: dict[str, dict], previous: dict[str, dict], prices: dict[str, int]) -> int:
     applied = 0
+    sampled_at = now_iso()
 
     for cid, price in prices.items():
         if cid not in cards:
@@ -282,9 +322,15 @@ def apply_pc_prices(cards: dict[str, dict], previous: dict[str, dict], prices: d
                 "trendConsole": float(old.get("trendConsole") or 0.0),
             }
 
-        old_price = int(previous.get(cid, {}).get("pricePc") or 0)
+        old = previous.get(cid, {})
+        history = history_with_sample(old, int(price), sampled_at)
         cards[cid]["pricePc"] = int(price)
-        cards[cid]["trendPc"] = pct(old_price, int(price))
+        cards[cid]["priceHistoryPc"] = history
+        cards[cid]["trendPc1h"] = trend_from_history(history, int(price), 1)
+        cards[cid]["trendPc6h"] = trend_from_history(history, int(price), 6)
+        cards[cid]["trendPc24h"] = trend_from_history(history, int(price), 24)
+        # Backwards compatibility: existing Android builds use trendPc.
+        cards[cid]["trendPc"] = cards[cid]["trendPc24h"]
         applied += 1
 
     return applied
